@@ -213,14 +213,20 @@ int main(int argc, char *argv[])
     opt.result_callback = bind(common_result_response, placeholders::_1);
     opt.feedback_callback = bind(common_feedback, placeholders::_1, placeholders::_2);
 
-    FJT_Goal goal_msg;
+    FJT_Goal goal_msg(rosidl_runtime_cpp::MessageInitialization::ZERO);
     goal_msg.goal_time_tolerance = rclcpp::Duration::from_seconds(1.0);
     goal_msg.trajectory.joint_names = joint_names;
     goal_msg.trajectory.points = points;
 
     cout << "sending goal with " << goal_msg.trajectory.points.size() << " points" << endl;
 
-        auto goal_handle_future = action_client->async_send_goal(goal_msg, opt);
+    cout << " multidof joint names size = " << goal_msg.multi_dof_trajectory.joint_names.size() << "; points size = " << goal_msg.multi_dof_trajectory.points.size() << endl;
+    cout << " path_tolerance size = " << goal_msg.path_tolerance.size() << endl;
+    cout << " component_path_tolerance size = " << goal_msg.component_path_tolerance.size() << endl;
+    cout << " goal_tolerance size = " << goal_msg.goal_tolerance.size() << endl;
+    cout << " component_goal_tolerance size = " << goal_msg.component_goal_tolerance.size() << endl;
+
+    auto goal_handle_future = action_client->async_send_goal(goal_msg, opt);
 
     if (rclcpp::spin_until_future_complete(node, goal_handle_future) !=
         rclcpp::FutureReturnCode::SUCCESS)

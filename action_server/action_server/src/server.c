@@ -10,6 +10,9 @@
 #include <rosidl_runtime_c/string_functions.h>
 #include <rosidl_runtime_c/primitives_sequence_functions.h>
 
+#include <micro_ros_utilities/type_utilities.h>
+#include <micro_ros_utilities/string_utilities.h>
+
 #include <rmw/rmw.h>
 #include <rmw_microros/rmw_microros.h>
 #include <rmw_microros/init_options.h>
@@ -77,6 +80,12 @@ void Ros_MotionServer_CheckForActivity_FollowJointTrajectory(rcl_wait_set_t *wai
 	bool is_result_request_ready = false;
 	bool is_goal_expired = false;
 
+	static micro_ros_utilities_memory_conf_t messageAllocationConfig = {0};
+
+	messageAllocationConfig.max_string_capacity = 32;
+	messageAllocationConfig.max_ros2_type_sequence_capacity = 25;
+	messageAllocationConfig.max_basic_type_sequence_capacity = 25;
+
 	//==================================
 	rcl_action_server_wait_set_get_entities_ready(wait_set, &actionServerFollowJointTrajectory,
 													&is_goal_request_ready, &is_cancel_request_ready, &is_result_request_ready, &is_goal_expired);
@@ -88,32 +97,34 @@ void Ros_MotionServer_CheckForActivity_FollowJointTrajectory(rcl_wait_set_t *wai
 		Ros_Debug_BroadcastData("FollowJointTrajectory - Goal request received");
 
 		rmw_request_id_t request_header;
-		control_msgs__action__FollowJointTrajectory_SendGoal_Request* pending_ros_goal_request;
+		control_msgs__action__FollowJointTrajectory_SendGoal_Request pending_ros_goal_request;
+		micro_ros_utilities_create_message_memory(
+			ROSIDL_GET_MSG_TYPE_SUPPORT(control_msgs, action, FollowJointTrajectory_SendGoal_Request),
+			&pending_ros_goal_request,
+			messageAllocationConfig);
 
-		pending_ros_goal_request = control_msgs__action__FollowJointTrajectory_SendGoal_Request__create();
+		RCSOFTCHECK(rcl_action_take_goal_request(&actionServerFollowJointTrajectory, &request_header, &pending_ros_goal_request))
 
-		RCSOFTCHECK(rcl_action_take_goal_request(&actionServerFollowJointTrajectory, &request_header, pending_ros_goal_request))
-
-		control_msgs__action__FollowJointTrajectory_SendGoal_Response* ros_goal_response;
-		ros_goal_response = control_msgs__action__FollowJointTrajectory_SendGoal_Response__create();
+		control_msgs__action__FollowJointTrajectory_SendGoal_Response ros_goal_response;
+		micro_ros_utilities_create_message_memory(
+			ROSIDL_GET_MSG_TYPE_SUPPORT(control_msgs, action, FollowJointTrajectory_SendGoal_Response),
+			&ros_goal_response,
+			messageAllocationConfig);
 
 		//ros_goal_response->accepted = ((Ros_MotionControl_FollowJointTrajectory_Request == NULL) && Ros_Controller_IsMotionReady() && Ros_MotionControl_InitTrajPointFull(pending_ros_goal_request));
-		ros_goal_response->accepted = (pending_ros_goal_request != NULL && pending_ros_goal_request->goal.trajectory.points.size >= 1);
-		if (pending_ros_goal_request)
-			Ros_Debug_BroadcastData("pending_ros_goal_request->goal.trajectory.points.size = %d", pending_ros_goal_request->goal.trajectory.points.size);
-		else
-			Ros_Debug_BroadcastData("pending_ros_goal_request");
+		ros_goal_response.accepted = (pending_ros_goal_request.goal.trajectory.points.size >= 1);
+		Ros_Debug_BroadcastData("pending_ros_goal_request->goal.trajectory.points.size = %d", pending_ros_goal_request.goal.trajectory.points.size);
 
-		rcl_action_send_goal_response(&actionServerFollowJointTrajectory, &request_header, ros_goal_response);
+		rcl_action_send_goal_response(&actionServerFollowJointTrajectory, &request_header, &ros_goal_response);
 		Ros_Debug_BroadcastData("FollowJointTrajectory - Goal response");
 
-		if (ros_goal_response->accepted) 
+		if (ros_goal_response.accepted) 
 		{
 			Ros_Debug_BroadcastData("FollowJointTrajectory - Goal request accepted");
 
 			// ---- Accept goal
 			goal_info = rcl_action_get_zero_initialized_goal_info();
-			goal_info.goal_id = pending_ros_goal_request->goal_id;
+			goal_info.goal_id = pending_ros_goal_request.goal_id;
 			//goal_info.stamp = 
 			goal_handle = rcl_action_accept_new_goal(&actionServerFollowJointTrajectory, &goal_info);
 
@@ -126,7 +137,7 @@ void Ros_MotionServer_CheckForActivity_FollowJointTrajectory(rcl_wait_set_t *wai
 			rcl_action_publish_status(&actionServerFollowJointTrajectory, &c_status_array.msg);
 
 			// ---- Pass off the data to MotionControl
-			Ros_MotionControl_FollowJointTrajectory_Request = pending_ros_goal_request; //will be destroyed in MotionControl
+			Ros_MotionControl_FollowJointTrajectory_Request = &pending_ros_goal_request; //will be destroyed in MotionControl
 			bMotionServer_FollowJointTrajectory_Active = TRUE;
 
 			// ---- Build feedback message
@@ -134,11 +145,11 @@ void Ros_MotionServer_CheckForActivity_FollowJointTrajectory(rcl_wait_set_t *wai
 			feedback_FollowJointTrajectory->goal_id = goal_info.goal_id;
 
 			//copy string sequence from the request message
-			int numberOfJointNames = pending_ros_goal_request->goal.trajectory.joint_names.size;
+			int numberOfJointNames = pending_ros_goal_request.goal.trajectory.joint_names.size;
 			rosidl_runtime_c__String__Sequence__init(&feedback_FollowJointTrajectory->feedback.joint_names, numberOfJointNames);
 			for (int i = 0; i < numberOfJointNames; i += 1)
 			{
-				rosidl_runtime_c__String__assign(&feedback_FollowJointTrajectory->feedback.joint_names.data[i], pending_ros_goal_request->goal.trajectory.joint_names.data[i].data);
+				rosidl_runtime_c__String__assign(&feedback_FollowJointTrajectory->feedback.joint_names.data[i], pending_ros_goal_request.goal.trajectory.joint_names.data[i].data);
 			}
 		}
 		else
@@ -147,8 +158,14 @@ void Ros_MotionServer_CheckForActivity_FollowJointTrajectory(rcl_wait_set_t *wai
 
 		}
 		//cleanup memory
-		control_msgs__action__FollowJointTrajectory_SendGoal_Request__destroy(pending_ros_goal_request);
-		control_msgs__action__FollowJointTrajectory_SendGoal_Response__destroy(ros_goal_response);
+		micro_ros_utilities_destroy_message_memory(
+			ROSIDL_GET_MSG_TYPE_SUPPORT(control_msgs, action, FollowJointTrajectory_SendGoal_Request),
+			&pending_ros_goal_request,
+			messageAllocationConfig);
+		micro_ros_utilities_destroy_message_memory(
+			ROSIDL_GET_MSG_TYPE_SUPPORT(control_msgs, action, FollowJointTrajectory_SendGoal_Response),
+			&ros_goal_response,
+			messageAllocationConfig);
 	}
 	
 	//==================================
